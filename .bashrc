@@ -61,7 +61,7 @@ export FZF_DEFAULT_OPTS='
 fzf_history() {
     local hist_file="${1:-$HOME/.bash_history}"  					# Se viene passato un file come argomento, lo usa, altrimenti default ~/.bash_history
     local selection key cmd ts                     					# Variabili locali per salvare la selezione, il tasto premuto, il comando e il timestamp
-
+     
     while true; do                                					# Loop infinito: continuerà a mostrare fzf finché non premi ESC o ENTER
         # fzf con --expect per catturare Ctrl+Q ed ESC
         mapfile -t fzf_output < <(
@@ -96,8 +96,12 @@ fzf_history() {
         key="${fzf_output[0]}"                        					# La prima riga dell’output fzf è il tasto premuto
         selection="${fzf_output[-1]}"                 					# L’ultima riga è la selezione effettiva
 
-        [[ "$key" == "esc" ]] && break                					# Se il tasto premuto è ESC → esci subito
-
+        if [[ "$key" == "esc" ]]; then                 					# Se il tasto premuto è ESC → esci subito
+		stty sane
+		break
+	fi
+	
+	
         # Ottieni il comando rimuovendo timestamp e commento
         cmd=$(echo "$selection" | sed -E 's/^[0-9-]{10} [0-9:]{8} //; s/ #[^#]*$//')
 
@@ -115,15 +119,17 @@ fzf_history() {
             add_history_comment_by_ts "$ts" "$hist_file"   				# Richiama la funzione per aggiungere/modificare commento
 
 	elif [[ "$key" == "ctrl-d" ]]; then
-	    echo "eeeeeeeeeeeeeeeeeee"
-            stty sane
+	    stty sane
             delete_history_block "$ts" "$hist_file"   					# Richiama la funzione delete_history_block
             		            							# Non break → continua il loop, puoi selezionare altri comandi
         else
             # ENTER → copia comando nel prompt e termina
             READLINE_LINE="$cmd"                       	 				# Imposta il comando nella linea di Bash
             READLINE_POINT=${#READLINE_LINE}           					# Posiziona il cursore alla fine
+          
             break                                       				# Esci dal loop dopo ENTER
+            
+            
         fi
     done
 }
