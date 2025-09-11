@@ -60,7 +60,7 @@ export FZF_DEFAULT_OPTS='
 #nuova funzione di gestione history
 fzf_history() {
     local hist_file="${1:-$HOME/.bash_history}"  					# Se viene passato un file come argomento, lo usa, altrimenti default ~/.bash_history
-    local selection key cmd ts                     					# Variabili locali per salvare la selezione, il tasto premuto, il comando e il timestamp
+    local selection key cmd ts comment                     					# Variabili locali per salvare la selezione, il tasto premuto, il comando e il timestamp
      
     while true; do                                					# Loop infinito: continuerà a mostrare fzf finché non premi ESC o ENTER
         # fzf con --expect per catturare Ctrl+Q ed ESC
@@ -87,8 +87,8 @@ fzf_history() {
                     }
                 }
             ' "$hist_file" | tac |							# il comando tac ordina la contrario
-            fzf --expect=ctrl-q,ctrl-d,esc --prompt="History > " \
-                --header="↑↓ naviga | ENTER: incolla | Ctrl+Q: commento | CTRL+D: cancella un comando | ESC: esci"  
+            fzf --expect=ctrl-q,ctrl-d,ctrl-o,esc --prompt="History > " \
+                --header="↑↓ naviga | ENTER: incolla | Ctrl+Q: commento | CTRL+D: cancella un comando | CRTL+O open link|  ESC: esci"  
         )
 
         [[ ${#fzf_output[@]} -eq 0 ]] && break        					# Se non c’è selezione (es. ESC) → esci dal loop
@@ -105,12 +105,22 @@ fzf_history() {
         # Ottieni il comando rimuovendo timestamp e commento
         cmd=$(echo "$selection" | sed -E 's/^[0-9-]{10} [0-9:]{8} //; s/ #[^#]*$//')
 
+	# Estraggo commento e comando separatamente dalla riga selezionata
+	#comment=$(echo "$selection" | grep -oE ' #[^#]*$' | sed 's/^ #//')
+	#cmd=$(echo "$selection" | sed -E 's/^[0-9-]{10} [0-9:]{8} //; s/ #[^#]*$//')
+	raw_comment=$(echo "$selection" | grep -oE ' #[^#]*$' | sed 's/^ #//')
+	comment=$(echo "$raw_comment" | grep -oP '(?<=\[\[).+?(?=\]\])')
+
+
+
         # Trova timestamp del comando selezionato
         ts=$(awk -v cmd="$cmd" '
             BEGIN{ts=""}
             /^#[0-9]+$/ { ts_val=substr($0,2); next }   				# Salva il timestamp corrente
             $0==cmd {print ts_val; exit}               					# Se la riga è uguale al comando selezionato → stampa il timestamp
         ' "$hist_file")
+
+	
 
         [[ -z "$ts" ]] && { echo "✗ Timestamp non trovato"; continue; } 		# Se non trova timestamp → continua il loop
 
@@ -121,14 +131,17 @@ fzf_history() {
 	elif [[ "$key" == "ctrl-d" ]]; then
 	    stty sane
             delete_history_block "$ts" "$hist_file"   					# Richiama la funzione delete_history_block
-            		            							# Non break → continua il loop, puoi selezionare altri comandi
+        
+        elif [[ "$key" == "ctrl-o" ]]; then
+	    stty sane
+	    echo $comment
+            open_link "$comment" 		   					# richiama la funzione che apre il link 
+            
         else
             # ENTER → copia comando nel prompt e termina
             READLINE_LINE="$cmd"                       	 				# Imposta il comando nella linea di Bash
             READLINE_POINT=${#READLINE_LINE}           					# Posiziona il cursore alla fine
-          
             break                                       				# Esci dal loop dopo ENTER
-            
             
         fi
     done
@@ -229,7 +242,48 @@ delete_history_block() {
 }
 
 
+# apre il link contenuto tra i marcatori [[.....]] nella stringa commento 
+open_link() {
+    local input="$1"
 
+    if [[ -z "$input" ]]; then
+        echo "Errore: nessun contenuto trovato"
+        return 1
+    fi
+
+    # Espandi "~" all'inizio del path (se presente)
+    if [[ "$input" == "~"* ]]; then
+        input="${input/#\~/$HOME}"
+    fi
+
+    # Caso: link http/https
+    if [[ "$input" =~ ^https?:// ]]; then
+        if command -v xdg-open >/dev/null 2>&1; then
+            nohup xdg-open "$input" >/dev/null 2>&1 &
+        elif command -v open >/dev/null 2>&1; then
+            open "$input"
+        else
+            echo "Errore: nessun comando per aprire link trovato"
+            return 1
+        fi
+        return 0
+    fi
+
+    # Caso: file o directory
+    if [[ -f "$input" || -d "$input" ]]; then
+        if command -v xdg-open >/dev/null 2>&1; then
+            nohup xdg-open "$input" >/dev/null 2>&1 &
+        elif command -v open >/dev/null 2>&1; then
+            open "$input"
+        else
+            echo "Errore: nessun comando per aprire file trovato"
+            return 1
+        fi
+    else
+        echo "Errore: file o directory '$input' non trovati"
+        return 1
+    fi
+}
 
 
 
