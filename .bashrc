@@ -97,7 +97,7 @@ fzf_history() {
         selection="${fzf_output[-1]}"                 					# L’ultima riga è la selezione effettiva
 
         if [[ "$key" == "esc" ]]; then                 					# Se il tasto premuto è ESC → esci subito
-		stty sane
+		reset_terminal
 		break
 	fi
 	
@@ -151,7 +151,11 @@ fzf_history() {
 # Mappa la funzione su Ctrl+R
 bind -x '"\C-r": fzf_history'
 
-
+#reset del terminale 
+reset_terminal() {
+    stty sane
+    tput sgr0
+}
 
 # funzione di commento
 add_history_comment_by_ts() {
