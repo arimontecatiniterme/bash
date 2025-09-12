@@ -60,7 +60,16 @@ export FZF_DEFAULT_OPTS='
 #nuova funzione di gestione history
 fzf_history() {
     local hist_file="${1:-$HOME/.bash_history}"  					# Se viene passato un file come argomento, lo usa, altrimenti default ~/.bash_history
-    local selection key cmd ts comment                     					# Variabili locali per salvare la selezione, il tasto premuto, il comando e il timestamp
+    local selection key cmd ts comment                     				# Variabili locali per salvare la selezione, il tasto premuto, il comando e il timestamp
+
+    check_bash_history
+    result=$?
+
+    if [[ $result -eq 1 ]]; then
+    	echo "Trovati errori, interrompo script."
+    	reset_terminal
+	return 1
+    fi
      
     while true; do                                					# Loop infinito: continuerà a mostrare fzf finché non premi ESC o ENTER
         # fzf con --expect per catturare Ctrl+Q ed ESC
@@ -156,6 +165,76 @@ reset_terminal() {
     stty sane
     tput sgr0
 }
+
+# verifica se la struttura del file .bash_history e' corretta
+check_bash_history() {
+    local hist_file="${1:-$HOME/.bash_history}"
+    local state="EXPECT_TS"
+    local line_number=0
+    local errors=0
+    local prev_line=""
+
+    if [[ ! -f "$hist_file" ]]; then
+        echo "✗ File non trovato: $hist_file"
+        return 1
+    fi
+
+
+    while IFS= read -r line; do
+        ((line_number++))
+        case "$state" in
+            EXPECT_TS)
+                if [[ "$line" =~ ^#[0-9]+$ ]]; then
+                    state="EXPECT_CMD"
+                    prev_line="$line"
+                else
+                    echo "❌ Errore riga $line_number: atteso timestamp (#...), trovato: '$line'"
+                    ((errors++))
+                fi
+                ;;
+            EXPECT_CMD)
+                if [[ "$line" =~ ^@ ]]; then
+                    echo "❌ Errore riga $line_number: atteso comando, trovato commento: '$line'"
+                    ((errors++))
+                    state="EXPECT_TS" # provo a ripartire comunque
+                elif [[ "$line" =~ ^#[0-9]+$ ]]; then
+                    echo "❌ Errore riga $line_number: atteso comando, trovato nuovo timestamp"
+                    ((errors++))
+                    state="EXPECT_CMD"
+                else
+                    state="EXPECT_COMMENT_OR_TS"
+                fi
+                ;;
+            EXPECT_COMMENT_OR_TS)
+                if [[ "$line" =~ ^@ ]]; then
+                    state="EXPECT_TS"
+                elif [[ "$line" =~ ^#[0-9]+$ ]]; then
+                    state="EXPECT_CMD"
+                    prev_line="$line"
+                else
+                    echo "❌ Errore riga $line_number: atteso commento o timestamp, trovato: '$line'"
+                    ((errors++))
+                fi
+                ;;
+        esac
+    done < "$hist_file"
+
+    if [[ "$state" == "EXPECT_CMD" ]]; then
+        echo "❌ Errore: file termina con un timestamp senza comando"
+        ((errors++))
+    fi
+
+    if ((errors > 0)); then
+        echo "⚠️  Controllo completato: trovati $errors errori."
+        return 1
+    else
+        echo "✅ File valido: nessun errore trovato."
+        return 0
+    fi
+}
+
+
+
 
 # funzione di commento
 add_history_comment_by_ts() {
